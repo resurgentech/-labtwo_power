@@ -125,7 +125,6 @@ func (o *Options) ValidateConfig() error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(o.config)
 	return nil
 }
 
@@ -142,7 +141,7 @@ func (o *Options) GetHostConfig(hostname string) (map[any]any, error) {
 	for _, hostraw := range hosts {
 		host, ok := hostraw.(map[any]any)
 		if !ok {
-			return nil, fmt.Errorf("Skipping invalid host config entry: %v\n", hostraw)
+			return nil, fmt.Errorf("skipping invalid host config entry: %v", hostraw)
 		}
 		if host["hostname"] == hostname {
 			return host, nil
@@ -171,17 +170,16 @@ func (o *Options) ValidateConfigHosts() error {
 		return fmt.Errorf("'hosts' key not found in configuration")
 	}
 
-	hostsList, ok := hosts.([]interface{})
+	hostsList, ok := hosts.([]any)
 	if !ok {
 		return fmt.Errorf("'hosts' is not a list in configuration")
 	}
 
-	hostcheck := false
 	var hostsArray []string
 
 	for _, host := range o.hosts {
 		for _, hostConfigInterface := range hostsList {
-			hostConfig, ok := hostConfigInterface.(map[interface{}]interface{})
+			hostConfig, ok := hostConfigInterface.(map[any]any)
 			if !ok {
 				if *o.debug {
 					fmt.Printf("Skipping invalid host config entry: %v\n", hostConfigInterface)
@@ -206,27 +204,25 @@ func (o *Options) ValidateConfigHosts() error {
 			}
 
 			if *o.debug {
-				fmt.Printf("Checking host %s against config host %s\n", host, hostname)
+				fmt.Printf("Checking host '%s' against config host '%s'\n", host, hostname)
 			}
 
 			if host == hostname {
-				hostcheck = true
 				hostsArray = append(hostsArray, hostname)
 				break
 			}
 
 			hostnameStripped := strings.Split(hostname, ".")[0]
+			if *o.debug {
+				fmt.Printf("Checking host '%s' against stripped config host '%s'\n", host, hostnameStripped)
+			}
 			if host == hostnameStripped {
-				hostcheck = true
 				hostsArray = append(hostsArray, hostname)
 				break
 			}
 		}
-		if hostcheck {
-			break
-		}
 	}
-	if !hostcheck {
+	if len(hostsArray) == 0 {
 		return fmt.Errorf("no hosts found in configuration file")
 	}
 	o.hosts = hostsArray

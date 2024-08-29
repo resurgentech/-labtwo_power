@@ -29,15 +29,47 @@ func (h *Host) IpmiConnect() (*ipmi.Client, error) {
 }
 
 func (h *Host) GetChassisPowerStatus(client *ipmi.Client) (bool, error) {
-	cstatus, err := client.GetChassisStatus()
+	var chassisStatus bool
+	var err error
+
+	retries := *h.options.retries
+	for retries > 0 {
+		cstatus, ierr := client.GetChassisStatus()
+		if ierr == nil {
+			chassisStatus = cstatus.PowerIsOn
+			break
+		} else {
+			err = ierr
+		}
+		time.Sleep(time.Second)
+		retries--
+	}
 	if err != nil {
 		return false, fmt.Errorf("error getting chassis status for host %s: %v", h.hostname, err)
 	}
-	chassisStatus := cstatus.PowerIsOn
+
 	if *h.options.debug {
 		fmt.Printf("Host %s chassis power status: %v\n", h.hostname, chassisStatus)
 	}
 	return chassisStatus, nil
+}
+
+func (h *Host) SetChassisPowerStatus(client *ipmi.Client, powerStatus bool) error {
+	var err error
+	retries := *h.options.retries
+	for retries > 0 {
+		if powerStatus {
+			_, err = client.ChassisControl(ipmi.ChassisControlPowerUp)
+		} else {
+			_, err = client.ChassisControl(ipmi.ChassisControlPowerDown)
+		}
+		if err == nil {
+			break
+		}
+		time.Sleep(time.Second)
+		retries--
+	}
+	return err
 }
 
 func (h *Host) executeAction(action string) (bool, error) {
@@ -46,7 +78,16 @@ func (h *Host) executeAction(action string) (bool, error) {
 		return false, fmt.Errorf("error connecting to host %s: %v", h.hostname, err)
 	}
 
-	startingpowerstatus, err := h.GetChassisPowerStatus(client)
+	startingpowerstatus := false
+	retries := *h.options.retries
+	for retries > 0 {
+		startingpowerstatus, err = h.GetChassisPowerStatus(client)
+		if err == nil {
+			break
+		}
+		time.Sleep(time.Second)
+		retries--
+	}
 	if err != nil {
 		return false, fmt.Errorf("error getting chassis status for host %s: %v", h.hostname, err)
 	}
@@ -55,13 +96,9 @@ func (h *Host) executeAction(action string) (bool, error) {
 	switch action {
 	case "on":
 		desiredpowerstatus = true
-		if !startingpowerstatus {
-			_, err = client.ChassisControl(ipmi.ChassisControlPowerUp)
-		}
+		err = h.SetChassisPowerStatus(client, desiredpowerstatus)
 	case "off":
-		if startingpowerstatus {
-			_, err = client.ChassisControl(ipmi.ChassisControlPowerDown)
-		}
+		err = h.SetChassisPowerStatus(client, desiredpowerstatus)
 	case "status":
 		desiredpowerstatus = startingpowerstatus
 		// Do nothing, just get the current power status
@@ -92,8 +129,3 @@ func (h *Host) executeAction(action string) (bool, error) {
 
 	return newpowerstatus, nil
 }
-
-/*
-GetChassisStatus 	✓ 	chassis status, chassis power status
-ChassisControl 	✓ 	chassis power on/off/cycle/reset/diag/soft
-*/
